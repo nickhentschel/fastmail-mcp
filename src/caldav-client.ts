@@ -89,12 +89,17 @@ export class CalDAVClient {
   async getCalendars(): Promise<Calendar[]> {
     const client = await this.createClient();
     const calendars = await client.fetchCalendars();
-    return calendars.map(cal => ({
-      url: cal.url,
-      displayName: typeof cal.displayName === 'string' ? cal.displayName : 'Unnamed Calendar',
-      description: cal.description,
-      color: (cal as any).calendarColor,
-    }));
+    return calendars.map(cal => {
+      const rawColor = (cal as any).calendarColor;
+      const color: string | undefined =
+        typeof rawColor === 'string' ? rawColor : rawColor?._cdata ?? undefined;
+      return {
+        url: cal.url,
+        displayName: typeof cal.displayName === 'string' ? cal.displayName : 'Unnamed Calendar',
+        description: cal.description,
+        color,
+      };
+    });
   }
 
   async getCalendarEvents(
