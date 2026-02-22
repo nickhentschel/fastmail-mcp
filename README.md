@@ -23,10 +23,13 @@ A Model Context Protocol (MCP) server that provides access to the Fastmail API, 
 - Get specific contacts by ID
 - Search contacts by name or email
 
-### Calendar Operations
-- List all calendars and calendar events
-- Get specific calendar events by ID
+### Calendar Operations (CalDAV)
+- List all calendars with names, colors, and IDs
+- List calendar events with optional date-range filtering
+- Get specific calendar events by URL
 - Create new calendar events with participants and details
+
+> Calendar access uses CalDAV (not JMAP) and requires separate credentials — see [Configuration](#configuration).
 
 ### Identity & Account Management
 - List available sending identities
@@ -35,9 +38,10 @@ A Model Context Protocol (MCP) server that provides access to the Fastmail API, 
 ## Setup
 
 ### Prerequisites
-- Node.js 18+ 
-- A Fastmail account with API access
-- Fastmail API token
+- Node.js 18+
+- A Fastmail account
+- A Fastmail API token (for email and contacts)
+- A Fastmail app password (for calendar access via CalDAV)
 
 ### Installation
 
@@ -64,10 +68,18 @@ A Model Context Protocol (MCP) server that provides access to the Fastmail API, 
 
 2. Set environment variables:
    ```bash
+   # Required for email and contacts
    export FASTMAIL_API_TOKEN="your_api_token_here"
    # Optional: customize base URL (defaults to https://api.fastmail.com)
    export FASTMAIL_BASE_URL="https://api.fastmail.com"
+
+   # Required for calendar access (CalDAV — separate from the JMAP token)
+   # Generate an app password in Fastmail → Settings → Privacy & Security → App Passwords
+   export FASTMAIL_USERNAME="you@fastmail.com"
+   export FASTMAIL_CALDAV_PASSWORD="your_app_password_here"
    ```
+
+   > **Why two sets of credentials?** Fastmail exposes email and contacts via JMAP (using an API token) but calendars via CalDAV (using HTTP Basic auth with an app password). The two protocols require different credentials.
 
 ### Running the Server
 
@@ -190,13 +202,16 @@ You can install this server as a Desktop Extension for Claude Desktop using the 
 
 ### Calendar Tools
 
-- **list_calendars**: List all calendars
-- **list_calendar_events**: List calendar events
-  - Parameters: `calendarId` (optional), `limit` (default: 50)
-- **get_calendar_event**: Get a specific calendar event by ID
-  - Parameters: `eventId` (required)
+Calendar tools use CalDAV and require `FASTMAIL_USERNAME` and `FASTMAIL_CALDAV_PASSWORD`.
+
+- **list_calendars**: List all calendars — returns `calendarId`, `calendarUrl`, `name`, `color`
+- **list_calendar_events**: List events from a calendar
+  - Parameters: `calendarId` (preferred, from `list_calendars`), `calendarUrl` (alternative), `timeRangeStart` (ISO 8601), `timeRangeEnd` (ISO 8601)
+  - Always pass a time range to avoid fetching all events
+- **get_calendar_event**: Get full details of a single event
+  - Parameters: `eventId` (the `url` field from a `list_calendar_events` result)
 - **create_calendar_event**: Create a new calendar event
-  - Parameters: `calendarId` (required), `title` (required), `description` (optional), `start` (required, ISO 8601), `end` (required, ISO 8601), `location` (optional), `participants` (optional array)
+  - Parameters: `calendarId` (preferred) or `calendarUrl`, `title` (required), `start` (required, ISO 8601), `end` (required, ISO 8601), `description` (optional), `location` (optional), `participants` (optional array of `{ email, name? }`)
 
 ### Identity & Testing Tools
 
@@ -227,10 +242,14 @@ Fastmail applies rate limits to API requests. The server handles standard rate l
 ### Project Structure
 ```
 src/
-├── index.ts              # Main MCP server implementation
-├── auth.ts              # Authentication handling
-├── jmap-client.ts       # JMAP client wrapper
-└── contacts-calendar.ts # Contacts and calendar extensions
+├── index.ts              # stdio entry point (Claude Desktop, npx)
+├── http-server.ts        # HTTP entry point (Fly.io / Poke)
+├── server.ts             # MCP server factory — all tool definitions and handlers
+├── auth.ts               # Fastmail JMAP authentication
+├── jmap-client.ts        # JMAP API client (email, contacts)
+├── caldav-client.ts      # CalDAV client (calendar access via tsdav)
+├── contacts-calendar.ts  # JMAP contacts client
+└── __tests__/            # vitest test suites (48 tests)
 ```
 
 ### Building
@@ -264,15 +283,17 @@ Contributions are welcome! Please ensure that:
 3. **Build Errors**: Check that TypeScript compilation completes without errors using `npm run build`
 4. **Calendar/Contacts "Forbidden" Errors**: Use `check_function_availability` to see setup guidance
 
-### Calendar/Contacts Not Working?
+### Calendar Not Working?
 
-If calendar and contacts functions return "Forbidden" errors, this is likely due to:
+Calendar access uses CalDAV, not JMAP. If calendar tools fail, check:
 
-1. **Account Plan**: Calendar/contacts API may require business/professional Fastmail plans
-2. **API Token Scope**: Your API token may need calendar/contacts permissions enabled
-3. **Feature Enablement**: These features may need explicit activation in your account
+1. **Missing credentials**: `FASTMAIL_USERNAME` and `FASTMAIL_CALDAV_PASSWORD` must both be set
+2. **Wrong password type**: CalDAV requires an *app password* generated in Fastmail → Settings → Privacy & Security → App Passwords — not your account password or JMAP API token
+3. **Check availability**: Run `check_function_availability` to confirm the credentials are detected
 
-**Solution**: Run `check_function_availability` for step-by-step setup guidance.
+### Contacts Not Working?
+
+Contacts use JMAP. If contacts tools return errors, `check_function_availability` will show whether the `urn:ietf:params:jmap:contacts` capability is available on your account.
 
 ### Testing Your Setup
 

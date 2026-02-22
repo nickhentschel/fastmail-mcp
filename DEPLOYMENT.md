@@ -209,6 +209,70 @@ With a single instance, session state is always local to the one process and the
 
 ---
 
+### Problem 4: Poke's LLM sends `calendarId` — wrong parameter name and format
+
+After calendar tools were implemented and working (verified by direct smoke tests), Poke still reported it could see calendars but not retrieve events — "parameter mismatch". Server-side request logging revealed the actual calls:
+
+```
+tool=list_calendar_events args={"calendarId":"70C274ED-5214-4496-B814-4E7578EC6573","limit":50}
+tool=list_calendar_events args={"calendarId":"70C274ED-5214-4496-B814-4E7578EC6573","limit":50}  ← retried
+tool=list_calendar_events args={"calendarId":"https://caldav.fastmail.com/...","limit":50}       ← tried full URL
+tool=list_calendar_events args={"limit":50}                                                        ← gave up
+```
+
+Two issues:
+1. **Wrong parameter name**: Poke's LLM sends `calendarId`, not `calendarUrl`. Our handler only destructured `calendarUrl`, so it got `undefined` and threw "calendarUrl is required".
+2. **UUID-only value**: Poke initially sends just the UUID portion of the CalDAV URL (e.g. `70C274ED-5214-4496-B814-4E7578EC6573`), not the full URL.
+
+The LLM's behavior was predictable in hindsight — it extracted the UUID from the CalDAV URL and treated it as a natural "ID". When that failed, it retried with the full URL (still as `calendarId`). When that also failed, it gave up entirely.
+
+**Fix:**
+1. Added `calendarId` field to the `Calendar` response from `list_calendars` — the last path segment of the CalDAV URL, which is the UUID. LLMs now see `calendarId` in the response and use it naturally.
+2. Updated `list_calendar_events` and `create_calendar_event` handlers to accept `calendarId` as the primary parameter, with three resolution strategies:
+   - UUID string → fetch calendar list, find match, use its `calendarUrl`
+   - Full URL passed as `calendarId` → use directly
+   - `calendarUrl` → use directly (backwards compatible)
+3. Updated tool schemas to list `calendarId` as the preferred parameter.
+
+**Lesson:** When an MCP tool returns an object that will be passed back as an argument to another tool, the field name in the response should **exactly match** the parameter name in the receiving tool. LLMs follow the path of least resistance — if the response has `calendarId`, they pass `calendarId`.
+
+---
+
+### How to debug LLM tool call mismatches
+
+When an LLM integration (Poke, Claude, etc.) reports it "can see X but can't do Y", the problem is almost always the LLM passing wrong parameter names or values. Direct smoke tests pass because you send the correct parameters manually.
+
+**Step 1: Add request logging to the server**
+
+In `src/server.ts`, at the top of the `CallToolRequestSchema` handler:
+
+```typescript
+console.error(`[MCP] tool=${name} args=${JSON.stringify(args)}`);
+```
+
+This logs every tool invocation with its exact arguments to stderr, which shows up in Fly.io logs.
+
+**Step 2: Watch live logs while the LLM tries**
+
+```bash
+timeout 60 fly logs --app fastmail-mcp 2>&1 | grep "\[MCP\]"
+```
+
+**Step 3: Compare to what you'd send manually**
+
+If your smoke test sends `calendarUrl: "https://..."` but the log shows `calendarId: "some-uuid"`, the LLM is using a different field name or format.
+
+**Step 4: Fix to match what the LLM sends**
+
+Options in order of preference:
+- Return the field name the LLM expects in the preceding tool's response (e.g. include `calendarId` in `list_calendars` output)
+- Accept both parameter names in the handler, using whichever is provided
+- Update tool descriptions to be more explicit about which field to use
+
+Do not rely solely on tool descriptions — LLMs often ignore them in favour of field names they've seen in prior responses.
+
+---
+
 ## File reference
 
 | File | Purpose |
