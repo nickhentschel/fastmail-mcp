@@ -54,7 +54,7 @@ describe('Calendar tool handlers', () => {
   describe('list_calendars', () => {
     it('calls getCalendars and returns JSON', async () => {
       const mockCalendars = [
-        { url: 'https://caldav.fastmail.com/calendars/1/', displayName: 'Personal' },
+        { calendarUrl: 'https://caldav.fastmail.com/calendars/1/', name: 'Personal' },
       ];
       mockCalDAV.getCalendars.mockResolvedValue(mockCalendars);
 

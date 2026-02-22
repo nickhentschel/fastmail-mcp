@@ -2,8 +2,8 @@ import { createDAVClient } from 'tsdav';
 import { randomUUID } from 'node:crypto';
 
 export interface Calendar {
-  url: string;
-  displayName: string;
+  calendarUrl: string;
+  name: string;
   description?: string;
   color?: string;
 }
@@ -94,8 +94,8 @@ export class CalDAVClient {
       const color: string | undefined =
         typeof rawColor === 'string' ? rawColor : rawColor?._cdata ?? undefined;
       return {
-        url: cal.url,
-        displayName: typeof cal.displayName === 'string' ? cal.displayName : 'Unnamed Calendar',
+        calendarUrl: cal.url,
+        name: typeof cal.displayName === 'string' ? cal.displayName : 'Unnamed Calendar',
         description: cal.description,
         color,
       };

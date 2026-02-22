@@ -39,12 +39,12 @@ describe('CalDAVClient', () => {
 
       expect(calendars).toHaveLength(2);
       expect(calendars[0]).toEqual({
-        url: 'https://caldav.fastmail.com/calendars/1/',
-        displayName: 'Personal',
+        calendarUrl: 'https://caldav.fastmail.com/calendars/1/',
+        name: 'Personal',
         description: 'My calendar',
         color: '#ff0000',
       });
-      expect(calendars[1].displayName).toBe('Work');
+      expect(calendars[1].name).toBe('Work');
     });
 
     it('uses "Unnamed Calendar" when displayName is absent', async () => {
@@ -55,7 +55,7 @@ describe('CalDAVClient', () => {
       const client = new CalDAVClient('user@fastmail.com', 'apppassword');
       const calendars = await client.getCalendars();
 
-      expect(calendars[0].displayName).toBe('Unnamed Calendar');
+      expect(calendars[0].name).toBe('Unnamed Calendar');
     });
 
     it('creates DAV client with Basic auth and caldav account type', async () => {
