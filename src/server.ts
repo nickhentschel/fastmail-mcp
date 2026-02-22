@@ -319,13 +319,17 @@ export function createServer(): Server {
         },
         {
           name: 'list_calendar_events',
-          description: 'List events from a calendar. Call list_calendars first to get the calendarUrl. Optionally filter to a date range with timeRangeStart and timeRangeEnd — strongly recommended to avoid fetching all events.',
+          description: 'List events from a calendar. Call list_calendars first to get the calendarId or calendarUrl. Optionally filter to a date range with timeRangeStart and timeRangeEnd — strongly recommended to avoid fetching all events.',
           inputSchema: {
             type: 'object',
             properties: {
+              calendarId: {
+                type: 'string',
+                description: 'ID of the calendar (the calendarId field returned by list_calendars). Preferred over calendarUrl.',
+              },
               calendarUrl: {
                 type: 'string',
-                description: 'URL of the calendar to fetch events from (the url field returned by list_calendars)',
+                description: 'Full URL of the calendar (the calendarUrl field returned by list_calendars). Use calendarId instead when possible.',
               },
               timeRangeStart: {
                 type: 'string',
@@ -336,7 +340,6 @@ export function createServer(): Server {
                 description: 'Return only events that overlap before this datetime (ISO 8601, e.g. 2026-02-28T23:59:59Z)',
               },
             },
-            required: ['calendarUrl'],
           },
         },
         {
@@ -355,13 +358,17 @@ export function createServer(): Server {
         },
         {
           name: 'create_calendar_event',
-          description: 'Create a new calendar event. Call list_calendars first to get the calendarUrl for the target calendar.',
+          description: 'Create a new calendar event. Call list_calendars first to get the calendarId for the target calendar.',
           inputSchema: {
             type: 'object',
             properties: {
+              calendarId: {
+                type: 'string',
+                description: 'ID of the calendar to create the event in (calendarId from list_calendars). Preferred over calendarUrl.',
+              },
               calendarUrl: {
                 type: 'string',
-                description: 'URL of the calendar to create the event in (from list_calendars)',
+                description: 'Full URL of the calendar (calendarUrl from list_calendars). Use calendarId instead when possible.',
               },
               title: {
                 type: 'string',
@@ -681,6 +688,8 @@ export function createServer(): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
+    console.error(`[MCP] tool=${name} args=${JSON.stringify(args)}`);
+
     try {
       // Calendar tools use CalDAV — do not require JMAP credentials
       switch (name) {
@@ -693,14 +702,33 @@ export function createServer(): Server {
         }
 
         case 'list_calendar_events': {
-          const { calendarUrl, timeRangeStart, timeRangeEnd } = args as any;
-          if (!calendarUrl) throw new McpError(ErrorCode.InvalidParams, 'calendarUrl is required');
+          const { calendarUrl, calendarId, timeRangeStart, timeRangeEnd } = args as any;
           const caldav = initializeCalDAVClient();
+
+          let resolvedUrl: string | undefined = calendarUrl;
+
+          // Accept calendarId as fallback (some LLMs use this parameter name)
+          if (!resolvedUrl && calendarId) {
+            if (typeof calendarId === 'string' && calendarId.startsWith('http')) {
+              resolvedUrl = calendarId;
+            } else {
+              // UUID-only — look up the full URL from the calendar list
+              const calendars = await caldav.getCalendars();
+              const match = calendars.find(
+                c => c.calendarId === calendarId || c.calendarUrl.includes(calendarId)
+              );
+              if (!match) throw new McpError(ErrorCode.InvalidParams, `Calendar not found: ${calendarId}`);
+              resolvedUrl = match.calendarUrl;
+            }
+          }
+
+          if (!resolvedUrl) throw new McpError(ErrorCode.InvalidParams, 'calendarUrl is required');
+
           const timeRange =
             timeRangeStart && timeRangeEnd
               ? { start: new Date(timeRangeStart), end: new Date(timeRangeEnd) }
               : undefined;
-          const events = await caldav.getCalendarEvents(calendarUrl, timeRange);
+          const events = await caldav.getCalendarEvents(resolvedUrl, timeRange);
           return {
             content: [{ type: 'text', text: JSON.stringify(events, null, 2) }],
           };
@@ -718,11 +746,27 @@ export function createServer(): Server {
         }
 
         case 'create_calendar_event': {
-          const { calendarUrl, title, description, start, end, location, participants } = args as any;
-          if (!calendarUrl || !title || !start || !end)
+          const { calendarUrl, calendarId, title, description, start, end, location, participants } = args as any;
+          if (!title || !start || !end)
             throw new McpError(ErrorCode.InvalidParams, 'calendarUrl, title, start, and end are required');
           const caldav = initializeCalDAVClient();
-          const eventUrl = await caldav.createCalendarEvent(calendarUrl, {
+
+          let resolvedUrl: string | undefined = calendarUrl;
+          if (!resolvedUrl && calendarId) {
+            if (typeof calendarId === 'string' && calendarId.startsWith('http')) {
+              resolvedUrl = calendarId;
+            } else {
+              const calendars = await caldav.getCalendars();
+              const match = calendars.find(
+                c => c.calendarId === calendarId || c.calendarUrl.includes(calendarId)
+              );
+              if (!match) throw new McpError(ErrorCode.InvalidParams, `Calendar not found: ${calendarId}`);
+              resolvedUrl = match.calendarUrl;
+            }
+          }
+          if (!resolvedUrl) throw new McpError(ErrorCode.InvalidParams, 'calendarUrl or calendarId is required');
+
+          const eventUrl = await caldav.createCalendarEvent(resolvedUrl, {
             title,
             description,
             start: new Date(start),

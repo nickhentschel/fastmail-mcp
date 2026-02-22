@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 export interface Calendar {
   calendarUrl: string;
+  calendarId: string;
   name: string;
   description?: string;
   color?: string;
@@ -26,6 +27,11 @@ export interface NewEvent {
   end: Date;
   location?: string;
   participants?: Array<{ email: string; name?: string }>;
+}
+
+function extractCalendarId(url: string): string {
+  // Extract the last path segment (usually a UUID) as a short identifier
+  return url.replace(/\/$/, '').split('/').pop() ?? url;
 }
 
 function extractIcsField(ics: string, field: string): string | undefined {
@@ -95,6 +101,7 @@ export class CalDAVClient {
         typeof rawColor === 'string' ? rawColor : rawColor?._cdata ?? undefined;
       return {
         calendarUrl: cal.url,
+        calendarId: extractCalendarId(cal.url),
         name: typeof cal.displayName === 'string' ? cal.displayName : 'Unnamed Calendar',
         description: cal.description,
         color,
