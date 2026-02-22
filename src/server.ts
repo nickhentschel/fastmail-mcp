@@ -311,7 +311,7 @@ export function createServer(): Server {
         },
         {
           name: 'list_calendars',
-          description: 'List all calendars via CalDAV. Requires FASTMAIL_USERNAME and FASTMAIL_CALDAV_PASSWORD env vars.',
+          description: 'List all calendars in the Fastmail account. Always call this first before listing or creating events — the calendarUrl it returns is required by list_calendar_events and create_calendar_event.',
           inputSchema: {
             type: 'object',
             properties: {},
@@ -319,21 +319,21 @@ export function createServer(): Server {
         },
         {
           name: 'list_calendar_events',
-          description: 'List events from a calendar via CalDAV',
+          description: 'List events from a calendar. Call list_calendars first to get the calendarUrl. Optionally filter to a date range with timeRangeStart and timeRangeEnd — strongly recommended to avoid fetching all events.',
           inputSchema: {
             type: 'object',
             properties: {
               calendarUrl: {
                 type: 'string',
-                description: 'URL of the calendar (from list_calendars)',
+                description: 'URL of the calendar to fetch events from (the url field returned by list_calendars)',
               },
               timeRangeStart: {
                 type: 'string',
-                description: 'Filter events starting after this ISO 8601 datetime (optional)',
+                description: 'Return only events that overlap after this datetime (ISO 8601, e.g. 2026-02-01T00:00:00Z)',
               },
               timeRangeEnd: {
                 type: 'string',
-                description: 'Filter events ending before this ISO 8601 datetime (optional)',
+                description: 'Return only events that overlap before this datetime (ISO 8601, e.g. 2026-02-28T23:59:59Z)',
               },
             },
             required: ['calendarUrl'],
@@ -341,13 +341,13 @@ export function createServer(): Server {
         },
         {
           name: 'get_calendar_event',
-          description: 'Get a specific calendar event by its URL (from list_calendar_events)',
+          description: 'Get full details of a single calendar event. Use the url field from a list_calendar_events result as the eventId.',
           inputSchema: {
             type: 'object',
             properties: {
               eventId: {
                 type: 'string',
-                description: 'URL of the event to retrieve (the url field from list_calendar_events)',
+                description: 'The url field of the event (returned by list_calendar_events)',
               },
             },
             required: ['eventId'],
@@ -355,7 +355,7 @@ export function createServer(): Server {
         },
         {
           name: 'create_calendar_event',
-          description: 'Create a new calendar event via CalDAV',
+          description: 'Create a new calendar event. Call list_calendars first to get the calendarUrl for the target calendar.',
           inputSchema: {
             type: 'object',
             properties: {
